@@ -140,16 +140,67 @@ Get-NetTCPConnection -LocalPort 8000 -State Listen
 이름 접속은 같은 네트워크 안의 윈도우 PC끼리 서로를 찾는 기능에 기대므로 100% 보장되지는 않습니다.
 안 되는 PC가 나오면 그 PC에만 IP 주소를 알려주면 됩니다.
 
+## 7. 원격 관리 (SSH) — 2026-08-18 추가
+
+서버 PC에 가지 않고 **개발 PC(`192.168.0.78`)에서** 배포·재시작·로그 확인을 합니다.
+
+설정은 끝나 있습니다. 아래는 무엇이 어떻게 되어 있는지의 기록입니다.
+
+| 항목 | 값 |
+| --- | --- |
+| 접속 | `ssh user@192.168.0.76` (또는 `DESKTOP-318VJ68`) |
+| 인증 | 개발 PC의 `~/.ssh/id_ed25519` 공개키 (암호 없음) |
+| 서버의 키 파일 | `C:\ProgramData\ssh\administrators_authorized_keys` |
+| 방화벽 | `OpenSSH-Server-In-TCP` → 모든 프로필 + `192.168.0.0/24`만 |
+| GitHub 인증 | 저장소 **배포 키(읽기 전용)**, 서버 원격은 `git@github.com:...` |
+
+설치할 때 밟은 함정 세 개를 남깁니다. 셋 다 **에러 없이 조용히 인증만 실패**합니다.
+
+- **관리자 그룹 계정의 키는 개인 폴더(`~/.ssh/authorized_keys`)에 넣으면 무시됩니다.**
+  윈도우 sshd 기본 설정이 관리자에 대해서만 `administrators_authorized_keys`를 보게 되어 있습니다.
+- **키 파일에 BOM이 붙으면 sshd가 그 줄을 못 읽습니다.** `Out-File`·`Set-Content` 기본값이 BOM을 붙이므로
+  `Add-Content -Encoding ascii`로 씁니다.
+- **키 파일 권한이 넓으면 거부합니다.** 관리자·SYSTEM만 남깁니다.
+  한글 윈도우는 그룹 이름이 다를 수 있어 이름 대신 SID로 지정합니다.
+  `icacls <파일> /inheritance:r /grant "*S-1-5-32-544:F" /grant "*S-1-5-18:F"`
+
+**`git pull`은 반드시 SSH 원격이어야 합니다.** HTTPS 원격이면 비공개 저장소 인증 창을 띄우려 하는데
+SSH 세션에는 그 창(TTY)이 없어서 `could not read Username for 'https://github.com'`으로 실패합니다.
+서버 원격은 배포 키를 쓰는 SSH 주소로 바꿔 두었습니다.
+
+### 개발 PC에서 배포하기
+
+```powershell
+# 1) 코드 받기
+ssh user@192.168.0.76 "cd /d C:\apps\thinkwise-wiki && git pull && git log --oneline -1"
+
+# 2) 웹 서버만 재시작 (색인·동기화는 건드리지 않는다)
+ssh user@192.168.0.76 "schtasks /end /tn ThinkwiseWiki & schtasks /run /tn ThinkwiseWiki"
+
+# 3) 반드시 확인 — 2)가 반쪽만 성공해도 아무도 알려주지 않는다
+ssh user@192.168.0.76 "netstat -ano | findstr LISTENING | findstr :8000"
+```
+
+> **3번을 생략하지 마세요.** 2026-08-18 배포에서 `Stop-ScheduledTask`는 성공하고
+> `Start-ScheduledTask`가 실패해 **위키가 몇 분간 죽어 있었습니다.** 되살린 것은 `schtasks /run`입니다.
+> `Start-ScheduledTask`가 그때 왜 "작업을 찾을 수 없다"고 했는지는 **원인을 확정하지 못했습니다**
+> (지금은 같은 작업이 정상 조회됩니다). 그래서 위 표의 재시작 명령을 `schtasks`로 바꿨습니다.
+> 색인 배지는 **색인의 나이만** 말해 주므로 서버가 죽은 것은 알려주지 않습니다.
+
+`|`나 `"`가 들어간 PowerShell 명령을 SSH로 한 줄에 밀어 넣으면 따옴표가 중간에 벗겨져
+엉뚱하게 해석됩니다. 여러 줄짜리 작업은 서버에 스크립트를 두고 그것을 호출하는 편이 낫습니다
+(재시작 검증 스크립트는 아직 없습니다 — 아래 '아직 안 되어 있는 것' 참고).
+
 ## 운영 메모
 
 | 하고 싶은 것 | 명령 |
 | --- | --- |
 | 서버 로그 보기 | `Get-Content C:\apps\thinkwise-wiki\logs\server.log -Tail 50 -Encoding UTF8` |
 | 동기화 로그 보기 | `Get-Content C:\apps\thinkwise-wiki\logs\sync.log -Tail 50 -Encoding UTF8` |
-| 재시작 | `Stop-ScheduledTask -TaskName ThinkwiseWiki; Start-ScheduledTask -TaskName ThinkwiseWiki` |
-| 색인 지금 갱신 | `Start-ScheduledTask -TaskName ThinkwiseWikiSync` |
+| 재시작 | `schtasks /end /tn ThinkwiseWiki` → `schtasks /run /tn ThinkwiseWiki` → **8000번 확인** |
+| 색인 지금 갱신 | `schtasks /run /tn ThinkwiseWikiSync` |
 | 색인 처음부터 다시 | `PowerShell -ExecutionPolicy Bypass -File .\sync_index.ps1 -Full` |
-| 코드 업데이트 | `git pull` 후 위 재시작 |
+| 코드 업데이트 | 위 7단계 '개발 PC에서 배포하기' 3줄 |
 | 등록 해제 | `Unregister-ScheduledTask -TaskName ThinkwiseWiki -Confirm:$false`<br>`Unregister-ScheduledTask -TaskName ThinkwiseWikiSync -Confirm:$false` |
 | 방화벽 되돌리기 | `Remove-NetFirewallRule -DisplayName "Thinkwise Wiki 8000"` |
 
