@@ -30,6 +30,20 @@ if ((Test-Path $logFile) -and ((Get-Item $logFile).Length -gt 10MB)) {
 
 "=== 시작: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') / 포트 $Port ===" | Out-File $logFile -Append -Encoding utf8
 
+# 파이썬과 파워셸이 서로 다른 글자표를 쓰면 로그의 한글이 깨진다. 양쪽을 UTF-8로 맞춘다.
+$env:PYTHONIOENCODING = "utf-8"
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
+# uvicorn은 "서버 시작됨" 같은 정상 로그도 표준 오류(stderr)로 내보낸다.
+# 파워셸은 외부 프로그램이 stderr에 쓰면 그것을 '오류'로 포장하는데,
+# 위쪽 ErrorActionPreference = "Stop"과 만나면 정상 기동 로그 한 줄이 서버를 죽인다.
+# 여기서부터는 Continue로 되돌린다. 설치 검사(python/.env 존재)는 이미 위에서 끝났고,
+# 이 지점 이후로 "멈춰야 할 실패"는 uvicorn 자신이 판단한다.
+$ErrorActionPreference = "Continue"
+
 # run_local.ps1과 갈리는 유일한 지점: 127.0.0.1이 아니라 0.0.0.0에 연다.
 # 127.0.0.1은 이 PC 자신만 접속 가능해서 사내 다른 PC가 못 붙는다.
-& $python -m uvicorn app.main:app --host 0.0.0.0 --port $Port *>> $logFile
+# "$_" 는 파워셸이 씌운 오류 포장을 벗겨 원래 로그 한 줄만 남긴다.
+& $python -m uvicorn app.main:app --host 0.0.0.0 --port $Port 2>&1 |
+    ForEach-Object { "$_" } |
+    Out-File $logFile -Append -Encoding utf8

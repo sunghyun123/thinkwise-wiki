@@ -59,13 +59,23 @@ DB 접속 정보를 실제 값으로 채웁니다.
 자동 등록 전에 수동으로 떠는지 먼저 봅니다.
 
 ```powershell
-.\run_server.ps1
+PowerShell -ExecutionPolicy Bypass -File .\run_server.ps1
 ```
+
+윈도우는 기본적으로 직접 만든 `.ps1` 파일의 실행을 막습니다. `-ExecutionPolicy Bypass`는
+**이번 실행에서만** 그 검사를 건너뛰라는 뜻이며 시스템 설정을 바꾸지 않습니다.
+(6단계의 자동 시작은 등록 명령에 이미 이 옵션이 들어 있어 이 문제를 겪지 않습니다.)
+
+띄우면 **콘솔에는 아무것도 나오지 않는 것이 정상입니다.** 서버 출력은 전부 `logs\server.log`로 갑니다.
 
 같은 PC에서 <http://127.0.0.1:8000> 을 열어 두 글자 이상으로 검색해 봅니다.
 결과가 나오면 `Ctrl+C`로 종료하고 다음 단계로 갑니다.
 
-실패하면 `logs\server.log`를 확인합니다.
+실패하면 로그를 확인합니다.
+
+```powershell
+Get-Content .\logs\server.log -Tail 30 -Encoding UTF8
+```
 
 ## 5. 방화벽 열기
 
@@ -104,7 +114,7 @@ Get-NetTCPConnection -LocalPort 8000 -State Listen
 
 | 하고 싶은 것 | 명령 |
 | --- | --- |
-| 로그 보기 | `Get-Content C:\apps\thinkwise-wiki\logs\server.log -Tail 50` |
+| 로그 보기 | `Get-Content C:\apps\thinkwise-wiki\logs\server.log -Tail 50 -Encoding UTF8` |
 | 재시작 | `Stop-ScheduledTask -TaskName ThinkwiseWiki; Start-ScheduledTask -TaskName ThinkwiseWiki` |
 | 코드 업데이트 | `git pull` 후 위 재시작 |
 | 등록 해제 | `Unregister-ScheduledTask -TaskName ThinkwiseWiki -Confirm:$false` |
