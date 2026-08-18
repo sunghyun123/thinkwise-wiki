@@ -93,6 +93,7 @@ app/
 docs/
   readonly-account.sql.example
   deploy-windows.md    사내 서버 배포 절차
+  deploy-log.md        배포 기록 (무슨 일이 있었고 왜 그렇게 정했나)
 tests/
 run_local.ps1          개인 PC 실행 (127.0.0.1)
 run_server.ps1         사내 서버 실행 (0.0.0.0 + 파일 로그)
