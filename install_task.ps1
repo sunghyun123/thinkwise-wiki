@@ -1,4 +1,4 @@
-#requires -RunAsAdministrator
+﻿#requires -RunAsAdministrator
 <#
     서버 PC에서 한 번만 실행한다. 재부팅되어도 위키가 자동으로 다시 뜨게 만든다.
     씽크와이즈와 MySQL은 서비스로 등록되어 있어 알아서 살아나지만,
