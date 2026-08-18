@@ -25,12 +25,17 @@ $action = New-ScheduledTaskAction `
     -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$script`"" `
     -WorkingDirectory $projectRoot
 
-# 부팅 직후 한 번 돌고, 그 뒤로는 계속 반복한다.
-# RepetitionDuration을 최대로 두어야 서버를 껐다 켜기 전까지 계속 반복한다.
-$trigger = New-ScheduledTaskTrigger -AtStartup
-$trigger.Repetition = (New-ScheduledTaskTrigger -Once -At (Get-Date) `
-    -RepetitionInterval (New-TimeSpan -Minutes $IntervalMinutes) `
-    -RepetitionDuration ([TimeSpan]::MaxValue)).Repetition
+# 방아쇠 두 개를 건다.
+#   ① 지금부터 $IntervalMinutes 마다 무기한 반복
+#   ② 재부팅 직후 한 번 (색인이 며칠 낡은 채로 시작하지 않도록)
+#
+# 반복 기간(RepetitionDuration)은 일부러 주지 않는다. 비워 두면 작업 스케줄러가
+# "무기한"으로 읽는다. [TimeSpan]::MaxValue를 주면 P99999999DT23H59M59S라는 값이
+# 만들어지는데, 작업 스케줄러가 이 값을 범위를 벗어난 것으로 보고 등록을 거부한다.
+$triggerRepeat = New-ScheduledTaskTrigger -Once -At (Get-Date) `
+    -RepetitionInterval (New-TimeSpan -Minutes $IntervalMinutes)
+$triggerBoot = New-ScheduledTaskTrigger -AtStartup
+$trigger = @($triggerRepeat, $triggerBoot)
 
 $settings = New-ScheduledTaskSettingsSet `
     -MultipleInstances IgnoreNew `
