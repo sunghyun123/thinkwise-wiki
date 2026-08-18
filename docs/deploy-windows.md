@@ -13,8 +13,9 @@ Get-NetIPAddress -AddressFamily IPv4 -InterfaceAlias "이더넷" | Select IPAddr
 ```
 
 - `git`이 없으면 <https://git-scm.com/download/win> 에서 설치합니다.
-- `PrefixOrigin`이 `Dhcp`면 IP가 언젠가 바뀔 수 있습니다. 공유기에서 고정(DHCP 예약)하거나
-  수동 IP로 바꿔야 사내 링크가 죽지 않습니다. `Manual`이면 그대로 두면 됩니다.
+- `PrefixOrigin`이 `Dhcp`면 IP가 언젠가 바뀔 수 있습니다. 다만 **IP를 고정하지 않아도 됩니다** —
+  사내 안내는 IP가 아니라 컴퓨터 이름(<http://DESKTOP-318VJ68:8000>)으로 하면
+  IP가 바뀌어도 윈도우가 알아서 새 주소를 찾습니다. 6단계에서 실제로 되는지 확인합니다.
 
 ## 1. 코드 내려받기
 
@@ -108,7 +109,15 @@ Get-ScheduledTask -TaskName ThinkwiseWiki | Get-ScheduledTaskInfo
 Get-NetTCPConnection -LocalPort 8000 -State Listen
 ```
 
-이제 사내 다른 PC에서 <http://192.168.0.76:8000> 으로 접속됩니다.
+이제 사내 다른 PC에서 접속됩니다. **반드시 서버가 아닌 다른 PC에서 확인하세요** —
+여기까지의 점검은 전부 이 PC 안에서 이뤄져서, 방화벽과 `0.0.0.0`이 실제로 통하는지는
+밖에서 붙어봐야만 알 수 있습니다.
+
+- <http://DESKTOP-318VJ68:8000> — **사내 안내는 이쪽으로 합니다.** IP가 바뀌어도 따라갑니다.
+- <http://192.168.0.76:8000> — 이름 접속이 안 되는 PC를 위한 예비 주소.
+
+이름 접속은 같은 네트워크 안의 윈도우 PC끼리 서로를 찾는 기능에 기대므로 100% 보장되지는 않습니다.
+안 되는 PC가 나오면 그 PC에만 IP 주소를 알려주면 됩니다.
 
 ## 운영 메모
 
