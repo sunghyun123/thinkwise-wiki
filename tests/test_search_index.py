@@ -30,24 +30,35 @@ def test_author_falls_back_to_last_named_event(index_db) -> None:
 
 def test_move_pair_is_not_treated_as_deletion(index_db) -> None:
     """가지를 옮기면 MOVE 뒤에 DEL이 따라 찍힌다. 이걸 삭제로 보면
-    실데이터에서 멀쩡한 가지 18,197개에 '삭제됨'이 붙는다."""
+    이제는 배지가 붙는 정도가 아니라 멀쩡한 가지 18,197개가 검색에서 사라진다."""
 
-    moved = _by_detail(search("가지", 50, Filters())["results"], "옮겨진 가지")
+    details = [item["detail"] for item in search("가지", 50, Filters())["results"]]
 
-    assert moved["is_deleted"] is False
+    assert "옮겨진 가지" in details
 
 
-def test_real_deletion_is_reported(index_db) -> None:
-    deleted = _by_detail(search("가지", 50, Filters())["results"], "지워진 가지")
+def test_deleted_branch_is_not_searchable(index_db) -> None:
+    """지운 것이 계속 조회되면 지우는 행위에 효과가 없다."""
 
-    assert deleted["is_deleted"] is True
+    payload = search("가지", 50, Filters())
+
+    assert "지워진 가지" not in [item["detail"] for item in payload["results"]]
+    # 개수에도 안 잡혀야 한다. total에 남으면 '뭔가 있는데 안 보여준다'가 새어 나간다.
+    assert payload["total"] == 2
+
+
+def test_deleted_branch_cannot_be_expanded_by_id(index_db) -> None:
+    """목록에서 가려도 펼치기가 열려 있으면 가린 것이 가려지지 않는다.
+    id는 목록을 거치지 않고도 숫자를 넣어 부를 수 있다."""
+
+    assert expand(6) == {}          # 6 = '지워진 가지'의 마지막 기록
 
 
 def test_missing_collaboration_stays_blank(index_db) -> None:
-    deleted = _by_detail(search("가지", 50, Filters())["results"], "지워진 가지")
+    alive = _by_detail(search("가지", 50, Filters())["results"], "살아있는 가지")
     moved = _by_detail(search("가지", 50, Filters())["results"], "옮겨진 가지")
 
-    assert deleted["collaboration"] == ""
+    assert alive["collaboration"] == ""
     assert moved["collaboration"] == "영진 프로젝트"
 
 
@@ -64,14 +75,16 @@ def test_facet_options_do_not_collapse_to_the_current_filter(index_db) -> None:
     payload = search("가지", 50, Filters(year="2022"))
 
     assert payload["total"] == 1
-    assert {item["key"] for item in payload["facets"]["year"]} == {"2022", "2023"}
+    # 2023(지워진 가지)은 선택지에서도 사라진다. 패싯이 목록과 같은 임시 테이블
+    # 위에서 계산되기 때문에 따로 맞출 필요가 없다.
+    assert {item["key"] for item in payload["facets"]["year"]} == {"2022", "2024"}
 
 
 def test_filters_narrow_the_result(index_db) -> None:
-    payload = search("가지", 50, Filters(year="2023"))
+    payload = search("가지", 50, Filters(year="2024"))
 
     assert payload["total"] == 1
-    assert payload["results"][0]["detail"] == "지워진 가지"
+    assert payload["results"][0]["detail"] == "살아있는 가지"
 
 
 def test_like_wildcards_are_treated_as_literal_characters(index_db) -> None:

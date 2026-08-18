@@ -146,7 +146,6 @@
       display: inline-block; padding: 2px 7px; border-radius: 6px;
       font-size: 11.5px; font-weight: 800;
     }
-    .badge.deleted { color: var(--danger); background: #fdeceb; }
     .badge.kind { color: var(--brand-dark); background: var(--brand-soft); }
 
     .expand-btn {
@@ -240,7 +239,10 @@
       </div>
 
       <div class="search-note">
-        <span>내용에 검색어가 포함된 가지를 마지막 수정 순으로 보여줍니다.</span>
+        <!-- 개수는 안 알리고 규칙만 상시 표시한다. "이 검색어에 지워진 게 N개 있다"는
+             말 자체가 숨기려던 사실을 새게 하지만, 규칙을 안 알리면 사람들이
+             삭제가 실제로 효과가 있는지 모른 채로 쓴다. -->
+        <span>내용에 검색어가 포함된 가지를 마지막 수정 순으로 보여줍니다. 삭제된 가지는 검색되지 않습니다.</span>
         <span>조회 전용 · 운영 DB 변경 없음</span>
       </div>
       <p id="error" class="error" role="alert" aria-live="polite"></p>
@@ -373,13 +375,7 @@
       const history = document.createElement("div");
       history.className = "history";
 
-      if (item.is_deleted) {
-        const badge = document.createElement("span");
-        badge.className = "badge deleted";
-        badge.textContent = "삭제됨";
-        history.append(badge);
-      }
-
+      /* '삭제됨' 배지는 없앴다. 삭제된 가지는 서버가 아예 내려주지 않는다. */
       const span = document.createElement("span");
       span.textContent = item.event_count > 1
         ? `${nf.format(item.event_count)}개 기록 · ${shortTime(item.first_at)}부터`

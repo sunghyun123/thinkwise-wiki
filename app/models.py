@@ -29,8 +29,9 @@ class SearchItem(BaseModel):
     first_at: str = Field(description="처음 만들어진 시각")
     event_count: int = Field(description="이 가지에 남은 작업 기록 수")
     kinds: list[str] = Field(description="어떤 종류의 작업이 있었나")
-    is_deleted: bool = Field(description="현재 삭제된 상태인가")
     branch_id: int = Field(description="펼치기에 쓰는 식별자")
+    # is_deleted 필드는 없앴다. 삭제된 가지는 응답에 아예 담기지 않으므로
+    # 이 값은 항상 false가 되고, 항상 false인 필드는 화면에 오해만 남긴다.
 
 
 class SearchResponse(BaseModel):

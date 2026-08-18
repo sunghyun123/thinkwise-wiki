@@ -5,6 +5,11 @@
     '배관'   96ms,  없는 단어 92ms
 LIMIT을 10배로 늘려도 14ms 차이라, "몇 건 보여줄까"는 이제 성능이 아니라 화면 문제다.
 
+삭제된 가지는 검색 결과와 펼치기 양쪽에서 보이지 않는다(실측 7.3% = 20,881개).
+잘못 쓴 것이나 남에게 보이기 싫어 지운 것이 계속 조회되면, 지우는 행위가 아무 효과가
+없는 셈이라 사람들이 마음 놓고 쓰지 못한다. 색인에는 원본 이벤트를 그대로 남겨 두고
+(정책을 바꿀 때 53만행 재적재가 필요 없게) 내보내는 지점에서만 가린다.
+
 접기(같은 협업 + 같은 내용의 반복 이벤트 합치기)는 저장하지 않고 여기서 파생시킨다.
 저장하면 새 이벤트가 들어올 때마다 요약을 갱신해야 하고, 한 경로만 빠뜨려도 영구히
 어긋난다. 파생시키면 규칙을 바꿔도 53만행 재적재가 필요 없다.
@@ -21,6 +26,17 @@ from .index_db import connect, get_state
 
 
 MAX_LIMIT = 500
+
+# 삭제된 가지를 결과에서 빼는 조건. **이 문장이 유일한 문지기다.**
+#
+# 왜 한 곳에 적는가: 삭제된 가지가 화면까지 나갈 수 있는 경로는 검색 목록과 펼치기
+# 두 개고, 둘이 각자 판정하면 한쪽만 고쳐졌을 때 프라이버시가 조용히 새는 쪽으로
+# 고장난다. 조건을 문자열로 뽑아 두 경로에 같은 것을 끼워 넣는다.
+#
+# last_gubun = '이동의 부산물이 아닌' 마지막 이벤트의 종류(FOLD_CTE 주석 참고).
+# 판정 근거가 없는 경우(NULL)도 숨기는 쪽에 넣는다: 잘못 숨기면 다시 보여주면 되지만
+# 잘못 보여준 것은 되돌릴 수 없다. 실측으로 이 경우는 0건이다(가지 286,538개 중).
+NOT_DELETED = "last_gubun IS NOT NULL AND last_gubun <> 'DEL'"
 
 
 def escape_like_literal(value: str) -> str:
@@ -110,8 +126,12 @@ class Filters:
 #
 # 읽기 전용 연결에서도 임시 테이블은 만들 수 있다. 임시 테이블은 색인 파일이 아니라
 # 별도의 임시 DB에 살기 때문이다. 연결은 요청마다 새로 열고 닫으므로 뒷정리도 필요 없다.
-BUILD_HITS_SQL = FOLD_CTE + """
+# 삭제된 가지는 여기서 걸러 임시 테이블에 애초에 담기지 않는다.
+# 목록·전체 개수·패싯 셋이 모두 이 테이블 위에서 계산되므로, 한 곳에서 빼면
+# 세 군데가 구조적으로 같은 기준을 쓴다(따로 맞출 곳이 없다).
+BUILD_HITS_SQL = FOLD_CTE + f"""
 SELECT * FROM enriched
+WHERE {NOT_DELETED}
 """
 
 # 접힌 한 줄을 펼친다. 접기를 저장하지 않았기 때문에 원본 이벤트가 그대로 남아 있어
@@ -125,11 +145,29 @@ ORDER BY w.indx DESC
 LIMIT :limit
 """
 
-BRANCH_HEAD_SQL = """
-SELECT w.detail, COALESCE(c.title, '') AS collaboration
-FROM work_log w
-LEFT JOIN collaboration c ON c.hashfname = w.hashfname
-WHERE w.indx = :indx
+# 펼치기도 같은 문지기를 통과해야 한다. 검색 목록에서 가렸다고 끝이 아니다 —
+# 이 엔드포인트는 branch_id만 있으면 부를 수 있고, 목록에 안 뜨는 가지의 id도
+# 숫자를 바꿔 넣으면 만들 수 있다. 여기서 안 막으면 가린 것이 가려지지 않는다.
+BRANCH_HEAD_SQL = f"""
+WITH head AS (
+    SELECT w.hashfname,
+           w.detail,
+           (SELECT g.gubun
+              FROM work_log g
+             WHERE g.hashfname = w.hashfname
+               AND g.detail IS w.detail
+             -- move_pair = 0(진짜 이벤트)을 먼저 보고, 그런 게 하나도 없으면
+             -- 마지막 이벤트로 판정한다. 목록 쪽 COALESCE(last_real_indx, last_indx)와
+             -- 같은 규칙이어야 두 경로의 판정이 갈리지 않는다.
+             ORDER BY g.move_pair ASC, g.indx DESC
+             LIMIT 1) AS last_gubun
+      FROM work_log w
+     WHERE w.indx = :indx
+)
+SELECT h.detail, COALESCE(c.title, '') AS collaboration
+FROM head h
+LEFT JOIN collaboration c ON c.hashfname = h.hashfname
+WHERE {NOT_DELETED}
 """
 
 # 펼치기도 상한이 있으므로 전체 개수를 따로 센다.
@@ -166,7 +204,6 @@ def search(keyword: str, limit: int, filters: Filters) -> dict[str, Any]:
                 "first_at": r["first_at"] or "",
                 "event_count": r["event_count"],
                 "kinds": (r["kinds"] or "").split(","),
-                "is_deleted": r["last_gubun"] == "DEL",
                 "branch_id": r["last_indx"],
             }
             for r in conn.execute(
@@ -217,6 +254,9 @@ def expand(branch_id: int, limit: int = 300) -> dict[str, Any]:
     conn = connect(read_only=True)
     try:
         head = conn.execute(BRANCH_HEAD_SQL, {"indx": branch_id}).fetchone()
+        # 없는 가지와 삭제된 가지가 여기서 같은 길로 빠진다(빈 응답 → 404).
+        # 일부러 구분하지 않는다. "삭제된 가지입니다"라고 답하면 지웠다는 사실 자체가
+        # 새고, 그게 숨기려던 것의 일부다.
         if head is None:
             return {}
         events = [

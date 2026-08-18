@@ -71,11 +71,21 @@ def test_branch_not_found(index_db) -> None:
     assert client.get("/api/branch/999999").status_code == 404
 
 
+def test_deleted_branch_returns_the_same_404_as_a_missing_one(index_db) -> None:
+    """삭제된 가지와 없는 가지가 구분되면 '지웠다'는 사실이 새어 나간다."""
+
+    deleted = client.get("/api/branch/6")
+    missing = client.get("/api/branch/999999")
+
+    assert deleted.status_code == 404
+    assert deleted.json()["detail"] == missing.json()["detail"]
+
+
 def test_status_exposes_index_freshness(index_db) -> None:
     response = client.get("/api/status")
 
     assert response.status_code == 200
-    assert response.json()["row_count"] == 6
+    assert response.json()["row_count"] == 7
 
 
 def test_missing_index_is_reported_not_silently_empty(tmp_path, monkeypatch) -> None:

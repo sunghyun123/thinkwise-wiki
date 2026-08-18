@@ -23,6 +23,9 @@ ROWS = [
     (4, "2022-03-02 14:00:00", "김무선", "DEL",   "옮겨진 가지",      "AAA"),
     (5, "2023-01-09 10:00:00", "조성현", "ADD",   "지워진 가지",      "BBB"),
     (6, "2023-05-11 16:20:00", "조성현", "DEL",   "지워진 가지",      "BBB"),
+    # 삭제된 가지를 결과에서 빼기로 하면서 넣은 행. BBB에 살아 있는 가지가 하나도
+    # 없으면 '협업명을 못 찾는 가지' 표본이 통째로 사라져 그 테스트가 뭘 보는지 모르게 된다.
+    (7, "2024-02-01 09:00:00", "박현우", "ADD",   "살아있는 가지",    "BBB"),
 ]
 
 # AAA에는 맵 이름이 있고 BBB는 없다.
@@ -51,7 +54,7 @@ def index_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     conn.execute(MARK_MOVE_PAIR_SQL, (0,))
     conn.executemany(
         "INSERT INTO sync_state(key, value) VALUES(?, ?)",
-        [("last_indx", "6"), ("row_count", str(len(ROWS))), ("last_error", "")],
+        [("last_indx", str(ROWS[-1][0])), ("row_count", str(len(ROWS))), ("last_error", "")],
     )
     conn.commit()
     conn.close()
