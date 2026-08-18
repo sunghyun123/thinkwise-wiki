@@ -1,0 +1,15 @@
+-- DBA가 아래 CHANGE_ME 값을 실제 환경에 맞게 바꾼 뒤 직접 실행하는 예시입니다.
+-- APP_PC_HOST는 MariaDB 서버에서 보이는 이 PC의 IP/호스트로 제한하세요.
+-- 이 파일은 애플리케이션에서 실행되지 않습니다.
+
+CREATE USER 'thinkwise_wiki_reader'@'APP_PC_HOST'
+IDENTIFIED BY 'CHANGE_ME_STRONG_PASSWORD';
+
+GRANT SELECT ON `tw_colla_log`.`work_log`
+TO 'thinkwise_wiki_reader'@'APP_PC_HOST';
+
+GRANT SELECT ON `tw_colman`.`collaboration_board`
+TO 'thinkwise_wiki_reader'@'APP_PC_HOST';
+
+-- 전역 권한이나 INSERT/UPDATE/DELETE/CREATE/DROP 권한은 부여하지 않습니다.
+
