@@ -55,6 +55,18 @@ DB 접속 정보를 실제 값으로 채웁니다.
 > 같은 PC에서도 `127.0.0.1`로 접속하는 순간 다른 사용자 취급을 받아 로그인이 거부됩니다.
 > 지금 동작하는 주소를 그대로 씁니다.
 
+## 3.5 검색 색인 만들기
+
+이 앱은 검색할 때 운영 DB를 조회하지 않고 **로컬 색인**에서만 찾습니다.
+색인이 없으면 검색이 503으로 실패하므로 서버를 띄우기 전에 먼저 만듭니다.
+
+```powershell
+PowerShell -ExecutionPolicy Bypass -File .\sync_index.ps1 -Full
+```
+
+53만행 기준 약 20초 걸리고 `data\wiki_index.db`(약 105MB)가 생깁니다.
+진행 상황은 `logs\sync.log`에 남습니다.
+
 ## 4. 손으로 한 번 띄워 확인
 
 자동 등록 전에 수동으로 떠는지 먼저 봅니다.
@@ -100,12 +112,21 @@ New-NetFirewallRule -DisplayName "Thinkwise Wiki 8000" -Direction Inbound `
 ```powershell
 .\install_task.ps1
 Start-ScheduledTask -TaskName ThinkwiseWiki
+
+# 색인을 10분마다 최신으로 유지하는 별도 작업
+.\install_sync_task.ps1
+Start-ScheduledTask -TaskName ThinkwiseWikiSync
 ```
+
+작업을 **둘로 나눈 이유**: 동기화가 실패해도 웹 서버는 그대로 떠서 검색이 계속 되어야 합니다.
+한 프로세스에 묶으면 한쪽 사고가 다른 쪽을 끌고 내려갑니다.
+색인이 낡으면 화면 오른쪽 위 배지가 노란색으로 바뀌어 사용자에게 알립니다.
 
 확인:
 
 ```powershell
 Get-ScheduledTask -TaskName ThinkwiseWiki | Get-ScheduledTaskInfo
+Get-ScheduledTask -TaskName ThinkwiseWikiSync | Get-ScheduledTaskInfo
 Get-NetTCPConnection -LocalPort 8000 -State Listen
 ```
 
@@ -123,16 +144,20 @@ Get-NetTCPConnection -LocalPort 8000 -State Listen
 
 | 하고 싶은 것 | 명령 |
 | --- | --- |
-| 로그 보기 | `Get-Content C:\apps\thinkwise-wiki\logs\server.log -Tail 50 -Encoding UTF8` |
+| 서버 로그 보기 | `Get-Content C:\apps\thinkwise-wiki\logs\server.log -Tail 50 -Encoding UTF8` |
+| 동기화 로그 보기 | `Get-Content C:\apps\thinkwise-wiki\logs\sync.log -Tail 50 -Encoding UTF8` |
 | 재시작 | `Stop-ScheduledTask -TaskName ThinkwiseWiki; Start-ScheduledTask -TaskName ThinkwiseWiki` |
+| 색인 지금 갱신 | `Start-ScheduledTask -TaskName ThinkwiseWikiSync` |
+| 색인 처음부터 다시 | `PowerShell -ExecutionPolicy Bypass -File .\sync_index.ps1 -Full` |
 | 코드 업데이트 | `git pull` 후 위 재시작 |
-| 등록 해제 | `Unregister-ScheduledTask -TaskName ThinkwiseWiki -Confirm:$false` |
+| 등록 해제 | `Unregister-ScheduledTask -TaskName ThinkwiseWiki -Confirm:$false`<br>`Unregister-ScheduledTask -TaskName ThinkwiseWikiSync -Confirm:$false` |
 | 방화벽 되돌리기 | `Remove-NetFirewallRule -DisplayName "Thinkwise Wiki 8000"` |
 
 ## 아직 안 되어 있는 것
 
 - **로그인이 없습니다.** 사내망에서 URL을 아는 사람은 누구나 전 직원의 작업 이력을 검색할 수 있습니다.
   현재 접근 제한은 5단계 방화벽 규칙의 대역 제한뿐입니다.
-- **DB 부하 대비가 없습니다.** 검색이 `LIKE '%검색어%'`라 인덱스를 타지 못하고 전체 스캔이 될 수 있습니다.
-  혼자 쓸 때는 문제가 없었지만 여러 명이 동시에 검색하면 운영 DB에 부담이 갑니다.
-  느려지는 게 확인되면 읽기 복제본이나 별도 검색 인덱스를 검토해야 합니다.
+- **과거 행이 수정·삭제되면 따라가지 못합니다.** 증분 복제는 `indx`가 커지는 것만 봅니다.
+  감사 로그라 과거가 바뀔 일이 없어 보이지만 **확인한 사실은 아닙니다.**
+  이상하면 `sync_index.ps1 -Full`로 다시 만들면 됩니다.
+- **재부팅 후 자동 시작을 아직 실제로 확인하지 않았습니다**(등록만 확인).
