@@ -243,15 +243,31 @@ ssh user@192.168.0.76 "netstat -ano | findstr LISTENING | findstr :8000"
 그대로 읽힙니다. 이 로그는 `app/main.py`가 직접 남기고, uvicorn 자체 액세스 로그는
 `run_server.ps1`의 `--no-access-log`로 꺼 두었습니다(안 끄면 같은 요청이 두 줄씩 쌓입니다).
 
-개발 PC에서 실시간으로 따라보려면:
+개발 PC에서 조회할 때는 `show_log.ps1`을 부릅니다. 서버에 스크립트를 두는 이유는
+7단계에 적은 그것입니다 — 따옴표나 `|`가 든 파워셸 명령을 SSH로 한 줄에 밀어 넣으면
+중간에 벗겨져 엉뚱하게 해석됩니다.
 
 ```powershell
-ssh user@192.168.0.76 "powershell -NoProfile -Command \"[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; Get-Content C:\apps\thinkwise-wiki\logs\server.log -Wait -Tail 20 -Encoding UTF8\""
+# 최근 50줄
+ssh user@192.168.0.76 "powershell -ExecutionPolicy Bypass -File C:\apps\thinkwise-wiki\show_log.ps1"
+
+# 검색 요청만 (화면 열기·favicon·상태 확인을 걷어낸다)
+ssh user@192.168.0.76 "powershell -ExecutionPolicy Bypass -File C:\apps\thinkwise-wiki\show_log.ps1 -Search"
+
+# 오늘 것만
+ssh user@192.168.0.76 "powershell -ExecutionPolicy Bypass -File C:\apps\thinkwise-wiki\show_log.ps1 -Today"
+
+# 누가 얼마나 썼나 (접속 PC별 요청 수 + 검색어 + 상태코드)
+ssh user@192.168.0.76 "powershell -ExecutionPolicy Bypass -File C:\apps\thinkwise-wiki\show_log.ps1 -Summary"
+
+# 실시간으로 따라보기 (Ctrl+C 로 끝냄)
+ssh user@192.168.0.76 "powershell -ExecutionPolicy Bypass -File C:\apps\thinkwise-wiki\show_log.ps1 -Follow"
 ```
 
-> **`[Console]::OutputEncoding` 한 줄을 빼면 한글이 깨져서 옵니다.** 파일에는 UTF-8로
-> 온전히 저장되어 있고, 깨지는 곳은 SSH로 **읽어내는** 경로입니다(서버 쪽 콘솔이 cp949).
-> 글자가 깨졌을 때 저장이 잘못된 것인지 읽기가 잘못된 것인지를 먼저 갈라야 하는 이유입니다.
+> **스크립트가 `[Console]::OutputEncoding`을 UTF-8로 못 박아 둡니다. 이게 없으면 한글이
+> 깨져서 옵니다.** 파일에는 UTF-8로 온전히 저장되어 있고 깨지는 곳은 SSH로 **읽어내는**
+> 경로입니다(서버 쪽 콘솔이 cp949). 글자가 깨졌을 때 저장이 잘못된 것인지 읽기가
+> 잘못된 것인지를 먼저 갈라야 하는 이유입니다.
 
 로그 회전은 `run_server.ps1`이 **서버를 기동할 때만** 검사합니다(10MB 넘으면 `.old`로 밀어냄).
 서버가 몇 달 붙어 있으면 검사할 기회 자체가 없습니다 — 현재 증가 속도로는 몇 년치 여유가
