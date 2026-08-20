@@ -44,6 +44,8 @@ $ErrorActionPreference = "Continue"
 # run_local.ps1과 갈리는 유일한 지점: 127.0.0.1이 아니라 0.0.0.0에 연다.
 # 127.0.0.1은 이 PC 자신만 접속 가능해서 사내 다른 PC가 못 붙는다.
 # "$_" 는 파워셸이 씌운 오류 포장을 벗겨 원래 로그 한 줄만 남긴다.
-& $python -m uvicorn app.main:app --host 0.0.0.0 --port $Port 2>&1 |
+# --no-access-log: 요청 기록은 app/main.py가 시각과 읽을 수 있는 검색어까지 붙여 남긴다.
+# 이 인자를 빼면 같은 요청이 두 줄씩 쌓인다(시각 있는 줄 + uvicorn의 시각 없는 줄).
+& $python -m uvicorn app.main:app --host 0.0.0.0 --port $Port --no-access-log 2>&1 |
     ForEach-Object { "$_" } |
     Out-File $logFile -Append -Encoding utf8

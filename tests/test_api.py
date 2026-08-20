@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+import io as _io
+import logging
+import re
+from typing import Iterator
+
+import pytest
 from fastapi.testclient import TestClient
 
 from app import main
@@ -108,3 +114,54 @@ def test_sync_reads_production_with_select_only() -> None:
         assert normalized.startswith("SELECT")
         for forbidden in ("INSERT ", "UPDATE ", "DELETE ", "DROP ", "ALTER ", "CREATE "):
             assert forbidden not in normalized
+
+
+@pytest.fixture()
+def access_log() -> Iterator[_io.StringIO]:
+    """액세스 로그가 실제로 찍는 줄을 붙잡는다.
+
+    이 로거는 propagate=False라 pytest의 caplog(root에 붙는다)로는 안 잡히고,
+    핸들러가 import 시점의 sys.stdout을 이미 붙들고 있어 capsys로도 안 잡힌다.
+    포맷터는 운영과 같은 것을 그대로 빌려 쓴다. 새로 만들면 시각 형식이 실제와
+    달라져도 테스트는 통과해 버린다.
+    """
+
+    stream = _io.StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(main.access_logger.handlers[0].formatter)
+    main.access_logger.addHandler(handler)
+    try:
+        yield stream
+    finally:
+        main.access_logger.removeHandler(handler)
+
+
+def test_access_log_shows_time_and_readable_query(index_db, access_log) -> None:
+    """uvicorn 기본 로그에는 시각이 없고 검색어가 %인코딩이라 사용 기록으로 못 썼다."""
+
+    client.get("/api/search", params={"q": "배관", "limit": 50})
+
+    line = access_log.getvalue().strip()
+    assert re.match(r"^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\] ", line)
+    assert "GET /api/search?q=배관&limit=50" in line
+    assert " 200 " in line
+    assert line.endswith("ms")
+
+
+def test_access_log_records_failed_requests_too(access_log) -> None:
+    """실패한 요청이 로그에서 빠지면 '아무도 안 썼다'와 구분이 안 된다."""
+
+    client.get("/api/search", params={"q": "가"})
+
+    assert " 422 " in access_log.getvalue()
+
+
+def test_access_log_cannot_be_forged_with_a_newline(index_db, access_log) -> None:
+    """검색어는 사용자가 보낸 값이다. 줄바꿈을 그대로 풀어 쓰면 로그에 가짜 줄을
+    끼워 넣을 수 있고, 그러면 로그를 근거로 쓸 수 없게 된다."""
+
+    forged = "배관" + chr(10) + "[2026-01-01 00:00:00] 가짜 줄"
+
+    client.get("/api/search", params={"q": forged})
+
+    assert len(access_log.getvalue().strip().splitlines()) == 1

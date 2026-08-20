@@ -11,5 +11,6 @@ if (-not (Test-Path ".\.env")) {
     throw ".env 파일이 없습니다. .env.example을 복사해 DB 접속 정보를 입력해 주세요."
 }
 
-& ".\.venv\Scripts\python.exe" -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+# 운영과 같은 액세스 로그를 보려고 여기서도 uvicorn 쪽을 끈다(run_server.ps1 주석 참고).
+& ".\.venv\Scripts\python.exe" -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
 
