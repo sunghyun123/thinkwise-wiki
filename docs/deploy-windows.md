@@ -99,13 +99,22 @@ Get-Content .\logs\server.log -Tail 30 -Encoding UTF8
 
 ```powershell
 New-NetFirewallRule -DisplayName "Thinkwise Wiki 8000" -Direction Inbound `
-    -Protocol TCP -LocalPort 8000 -Action Allow -Profile Private,Domain `
+    -Protocol TCP -LocalPort 8000 -Action Allow -Profile Any `
     -RemoteAddress 192.168.0.0/24
 ```
 
-- `-Profile Private,Domain` — 공용 네트워크 프로필에서는 열지 않습니다.
 - `-RemoteAddress 192.168.0.0/24` — 사내 대역에서 오는 요청만 받습니다.
-  앱에 로그인이 없으므로 이 두 줄이 현재 유일한 접근 제한입니다.
+  앱에 로그인이 없으므로 **이 한 줄이 현재 유일한 접근 제한입니다.**
+- `-Profile Any` — 프로필로는 제한하지 않습니다. 2026-08-19까지 이 문서는 `Private,Domain`으로
+  적어 두었지만 **그대로 하면 사내에서 위키가 열리지 않습니다.** 이 PC의 이더넷은 네트워크
+  범주가 `Public`이라(`Get-NetConnectionProfile`으로 확인) `Private,Domain` 규칙이 그 인터페이스에
+  적용되지 않습니다. 실제로 등록되어 있는 규칙도 `Any`입니다(2026-08-20 실측).
+- 그래서 남는 대가: 이 PC가 다른 네트워크에 붙어도 규칙은 그대로 살아 있고, 그때 막아 주는 것은
+  대역 제한 하나뿐입니다. **`192.168.0.0/24`는 어느 회사에나 어느 집에나 있는 대역**이라
+  "사내"를 가리키는 표시가 아닙니다(2026-08-19에 사설 IP로 배운 것과 같은 성질입니다).
+- 파일 공유(445번)는 열려 있지 않습니다 — 개발 PC에서 도달 실패, 445를 허용하는 인바운드 규칙
+  없음(2026-08-20 실측). 그래서 윈도우 기본 관리 공유(`C$`)로 서버의 파일을 네트워크에서
+  읽어가는 경로는 닫혀 있습니다.
 
 ## 6. 자동 시작 등록
 
@@ -123,6 +132,14 @@ Start-ScheduledTask -TaskName ThinkwiseWikiSync
 작업을 **둘로 나눈 이유**: 동기화가 실패해도 웹 서버는 그대로 떠서 검색이 계속 되어야 합니다.
 한 프로세스에 묶으면 한쪽 사고가 다른 쪽을 끌고 내려갑니다.
 색인이 낡으면 화면 오른쪽 위 배지가 노란색으로 바뀌어 사용자에게 알립니다.
+
+> **2026-08-20 확인: 지금 색인을 돌리는 것은 이 작업이 아닙니다.** `ThinkwiseWikiSync`는
+> `Disabled` 상태이고, 실제로는 `YJS ThinkWise Shared Index Sync`라는 별도 작업이
+> `C:\apps\yjs_backoffice\scripts\run_thinkwise_index_sync.ps1 -WikiRoot C:\apps\thinkwise-wiki`를
+> **60초마다** 실행하고 있습니다. 그쪽은 `sync_index.ps1`을 거치지 않으므로
+> **`logs\sync.log`에 한 줄도 남지 않습니다** — 그 파일은 2026-08-19 10:30에서 멈춰 있어서,
+> 그것만 보고 "동기화가 며칠째 죽었다"고 오진하기 쉽습니다. 색인이 실제로 최신인지는
+> `sync.log`가 아니라 **`/api/status`의 `age_minutes`**로 판단하세요.
 
 확인:
 
@@ -203,7 +220,8 @@ ssh user@192.168.0.76 "netstat -ano | findstr LISTENING | findstr :8000"
 | 하고 싶은 것 | 명령 |
 | --- | --- |
 | 서버 로그 보기 | `Get-Content C:\apps\thinkwise-wiki\logs\server.log -Tail 50 -Encoding UTF8` |
-| 동기화 로그 보기 | `Get-Content C:\apps\thinkwise-wiki\logs\sync.log -Tail 50 -Encoding UTF8` |
+| 누가 무엇을 검색했나 | `Select-String C:\apps\thinkwise-wiki\logs\server.log -Pattern '/api/search' -Encoding UTF8 \| Select-Object -Last 50` |
+| 동기화 로그 보기 | `sync.log`는 2026-08-19 이후 갱신되지 않습니다(6단계 주의 참고). 색인의 나이는<br>`(Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/api/status).Content` |
 | 재시작 | `schtasks /end /tn ThinkwiseWiki` → `schtasks /run /tn ThinkwiseWiki` → **8000번 확인** |
 | 색인 지금 갱신 | `schtasks /run /tn ThinkwiseWikiSync` |
 | 색인 처음부터 다시 | `PowerShell -ExecutionPolicy Bypass -File .\sync_index.ps1 -Full` |
@@ -213,10 +231,41 @@ ssh user@192.168.0.76 "netstat -ano | findstr LISTENING | findstr :8000"
 | **씽크와이즈 로그인이 뜬다고 할 때** | 주소에서 `:8000`이 빠진 것. 80번은 씽크와이즈 본체다 |
 | **도메인으로 안 들어가진다고 할 때** | 먼저 `DESKTOP-318VJ68:8000`으로 되는지 확인 → 되면 **IP가 바뀐 것**.<br>`yjselect.com` DNS의 `wiki` A 레코드를 새 IP로 고친다 |
 
+### 사용 로그 (누가 언제 무엇을 검색했나)
+
+`server.log`에 요청 한 건이 한 줄씩 쌓입니다(2026-08-20부터 이 형식입니다).
+
+```
+[2026-08-20 11:39:48] 192.168.0.78 GET /api/search?q=오늘 한일&limit=10 200 118ms
+```
+
+시각·접속 PC·검색어·상태코드·소요 시간입니다. 검색어는 `%`인코딩을 풀어서 남기므로
+그대로 읽힙니다. 이 로그는 `app/main.py`가 직접 남기고, uvicorn 자체 액세스 로그는
+`run_server.ps1`의 `--no-access-log`로 꺼 두었습니다(안 끄면 같은 요청이 두 줄씩 쌓입니다).
+
+개발 PC에서 실시간으로 따라보려면:
+
+```powershell
+ssh user@192.168.0.76 "powershell -NoProfile -Command \"[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; Get-Content C:\apps\thinkwise-wiki\logs\server.log -Wait -Tail 20 -Encoding UTF8\""
+```
+
+> **`[Console]::OutputEncoding` 한 줄을 빼면 한글이 깨져서 옵니다.** 파일에는 UTF-8로
+> 온전히 저장되어 있고, 깨지는 곳은 SSH로 **읽어내는** 경로입니다(서버 쪽 콘솔이 cp949).
+> 글자가 깨졌을 때 저장이 잘못된 것인지 읽기가 잘못된 것인지를 먼저 갈라야 하는 이유입니다.
+
+로그 회전은 `run_server.ps1`이 **서버를 기동할 때만** 검사합니다(10MB 넘으면 `.old`로 밀어냄).
+서버가 몇 달 붙어 있으면 검사할 기회 자체가 없습니다 — 현재 증가 속도로는 몇 년치 여유가
+있지만, "회전이 걸려 있다"는 말은 정확하지 않습니다.
+
 ## 아직 안 되어 있는 것
 
 - **로그인이 없습니다.** 사내망에서 URL을 아는 사람은 누구나 전 직원의 작업 이력을 검색할 수 있습니다.
   현재 접근 제한은 5단계 방화벽 규칙의 대역 제한뿐입니다.
+- **사용 로그에 "누가 언제 무엇을 찾았는지"가 남습니다.** 로그인이 없으니 IP가 사실상
+  사람을 가리키고, 검색어에는 사람 이름이나 인사 관련 낱말이 들어옵니다. 지금은 그 파일에
+  닿을 수 있는 문이 SSH(개발 PC의 키)와 서버 PC 앞뿐이고 활성 계정도 하나뿐이라
+  관리자만 읽을 수 있는 상태입니다 — 다만 그것을 보장하는 건 코드가 아니라 **그 PC의
+  계정·권한 설정**입니다. 계정을 늘리거나 공유 폴더를 열면 그날 이 성질이 바뀝니다.
 - **과거 행이 수정·삭제되면 따라가지 못합니다.** 증분 복제는 `indx`가 커지는 것만 봅니다.
   감사 로그라 과거가 바뀔 일이 없어 보이지만 **확인한 사실은 아닙니다.**
   이상하면 `sync_index.ps1 -Full`로 다시 만들면 됩니다.
