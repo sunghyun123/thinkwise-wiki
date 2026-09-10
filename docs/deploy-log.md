@@ -578,3 +578,37 @@ U+FFFD 0개), 공백이 `+`가 아니라 공백으로 나오는 것.
 3. **`python.exe` 방화벽 규칙 정리**(8/18에서 넘어옴).
 4. **`sync.log`를 어떻게 할지 정한다.** 지금은 아무도 쓰지 않는 파일이 남아 있어서,
    그것을 보고 오진할 사람이 다음에도 나온다. 지우거나, 주인을 되돌리거나 둘 중 하나다.
+
+## 2026-09-10 — 브라우저의 HTTPS 승격과 공인 HTTPS 전환
+
+오후부터 일부 PC가 평문 `:8000` 주소를 자동으로 HTTPS로 승격했다. 서버는 계속 정상 실행 중이었고
+HTTP 상태 API도 200이었지만, TLS 바이트를 HTTP 서버인 uvicorn에 보낸 흔적이
+`WARNING: Invalid HTTP request received.`로 반복됐다. 애플리케이션 장애가 아니라 브라우저와 서버의
+프로토콜 불일치였다.
+
+임시 예외 설정 대신 정식 주소를 `https://wiki.yjsboard.com`으로 전환했다. 가비아 DNS의 `wiki` A
+레코드는 사내 IP `192.168.0.76`을 가리키고, Caddy는 그 LAN 주소의 443에서만 수신해
+`127.0.0.1:8000`으로 프록시한다. 외부에서는 사설 IP로 라우팅할 수 없고 Windows 방화벽도
+`LocalSubnet`만 허용한다. 기존 `www.yjsboard.com`과 `erp.yjsboard.com`의 레코드·Nginx 설정은
+건드리지 않았다.
+
+사설 IP는 HTTP-01 검증을 받을 수 없어 DNS-01을 사용했다. 가비아 전체 DNS 권한을 서버에 넣지 않고,
+`_acme-challenge.wiki` CNAME을 ACME-DNS의 무작위 TXT 레코드 하나에 위임했다. 자격증명은
+`C:\apps\thinkwise-wiki\caddy\acmedns.json`에만 있으며 SYSTEM과 Administrators만 읽을 수 있다.
+`caddy/` 전체는 `.gitignore`에 넣었다. 이 키가 유출되어도 갱신용 TXT 하나만 바꿀 수 있지만,
+ACME-DNS 서비스에 장애가 나면 다음 갱신이 실패하므로 `runtime.log`의 갱신 오류를 확인해야 한다.
+
+`install_https.ps1`은 Caddy의 ACME-DNS 플러그인 포함 빌드를 내려받고, Caddyfile 검증,
+`ThinkwiseWikiHttps` 시작 작업, LAN 전용 443 방화벽 규칙을 멱등하게 구성한다. DNS 전파 전에는
+서비스를 시작하지 않으며 `-Start`를 붙였을 때만 기동한다.
+
+실측 결과는 다음과 같다.
+
+- 가비아 권한 DNS, Google DNS, Cloudflare DNS에서 A와 CNAME 값 일치
+- Let's Encrypt DNS-01 검증 성공 및 `wiki.yjsboard.com` 인증서 발급 성공
+- `https://wiki.yjsboard.com/api/status` → 200, 색인 553,285행, `age_minutes: 0`
+- `ThinkwiseWikiHttps` → SYSTEM 계정으로 실행 중, 재부팅 시 자동 시작 등록
+- Caddy는 `192.168.0.76:443`만 사용하고 기존 Tailscale의 `100.83.0.66:443`과 충돌하지 않음
+
+남은 운영상 한계는 로그인 부재다. HTTPS는 전송 구간을 암호화하지만 사용자를 인증하지 않는다.
+현재 보호 경계는 사내망 라우팅과 두 방화벽 규칙이며, 외부 공개 서비스로 바꾸려면 먼저 인증을 붙여야 한다.

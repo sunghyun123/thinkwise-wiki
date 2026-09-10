@@ -14,9 +14,9 @@ Get-NetIPAddress -AddressFamily IPv4 -InterfaceAlias "이더넷" | Select IPAddr
 
 - `git`이 없으면 <https://git-scm.com/download/win> 에서 설치합니다.
 - `PrefixOrigin`이 `Dhcp`면 IP가 언젠가 바뀔 수 있습니다. 다만 **IP를 고정하지 않아도 됩니다** —
-  사내 안내를 도메인(<http://wiki.yjselect.com:8000>)과 컴퓨터 이름(<http://DESKTOP-318VJ68:8000>)
+  사내 안내를 도메인(<https://wiki.yjsboard.com>)과 컴퓨터 이름(<http://DESKTOP-318VJ68:8000>)
   두 갈래로 하기 때문입니다. IP가 바뀌면 컴퓨터 이름 쪽은 윈도우가 알아서 따라가고,
-  도메인 쪽은 `yjselect.com` DNS의 `wiki` A 레코드 값만 고치면 됩니다.
+  도메인 쪽은 `yjsboard.com` DNS의 `wiki` A 레코드와 HTTPS 바인딩을 함께 고치면 됩니다.
   6단계에서 실제로 되는지 확인합니다.
 
 ## 1. 코드 내려받기
@@ -149,17 +149,27 @@ Get-ScheduledTask -TaskName ThinkwiseWikiSync | Get-ScheduledTaskInfo
 Get-NetTCPConnection -LocalPort 8000 -State Listen
 ```
 
+HTTPS 프록시는 DNS 레코드를 먼저 등록한 뒤 별도로 설치합니다. `acmedns.json`은 인증서 갱신
+전용 비밀 파일이므로 저장소에 올리지 않습니다.
+
+```powershell
+# 처음 한 번: ACME-DNS 자격증명 생성 + Caddy 설치 + 작업 등록
+PowerShell -ExecutionPolicy Bypass -File .\install_https.ps1 -RegisterAcmeDns
+
+# 출력된 A/CNAME을 DNS에 등록하고 전파를 확인한 뒤 시작
+PowerShell -ExecutionPolicy Bypass -File .\install_https.ps1 -Start
+```
+
 이제 사내 다른 PC에서 접속됩니다. **반드시 서버가 아닌 다른 PC에서 확인하세요** —
 여기까지의 점검은 전부 이 PC 안에서 이뤄져서, 방화벽과 `0.0.0.0`이 실제로 통하는지는
 밖에서 붙어봐야만 알 수 있습니다.
 
-- <http://wiki.yjselect.com:8000> — **메신저로 안내할 때는 이쪽.** 카톡 등에서 링크로 잡힙니다.
+- <https://wiki.yjsboard.com> — **메신저로 안내할 정식 주소.** 공인 인증서와 자동 갱신을 사용합니다.
 - <http://DESKTOP-318VJ68:8000> — IP가 바뀌어도 따라가는 예비 주소.
 - <http://192.168.0.76:8000> — 위 둘이 다 안 되는 PC를 위한 최후 수단.
 
-> **`:8000`을 빼면 안 됩니다.** 80번은 씽크와이즈 본체(IIS)라, 에러가 아니라 **씽크와이즈 협업플랫폼
-> 로그인 화면이 200으로 정상적으로 뜹니다.** 받는 사람 눈에는 "위키가 씽크와이즈로 잘못 연결됐다"로 보입니다.
-> **`https://`도 안 됩니다** — 이 서버는 평문 http만 서비스합니다.
+> 정식 주소에는 `https://`를 쓰고 포트를 붙이지 않습니다. 예비 주소는 반대로 `http://`와
+> `:8000`이 모두 필요합니다. 예비 주소에서 포트를 빼면 80번의 씽크와이즈 본체(IIS)가 열립니다.
 
 이름 접속은 같은 네트워크 안의 윈도우 PC끼리 서로를 찾는 기능에 기대므로 100% 보장되지는 않습니다.
 안 되는 PC가 나오면 그 PC에만 IP 주소를 알려주면 됩니다.
@@ -223,13 +233,14 @@ ssh user@192.168.0.76 "netstat -ano | findstr LISTENING | findstr :8000"
 | 누가 무엇을 검색했나 | `Select-String C:\apps\thinkwise-wiki\logs\server.log -Pattern '/api/search' -Encoding UTF8 \| Select-Object -Last 50` |
 | 동기화 로그 보기 | `sync.log`는 2026-08-19 이후 갱신되지 않습니다(6단계 주의 참고). 색인의 나이는<br>`(Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/api/status).Content` |
 | 재시작 | `schtasks /end /tn ThinkwiseWiki` → `schtasks /run /tn ThinkwiseWiki` → **8000번 확인** |
+| HTTPS 재시작 | `schtasks /end /tn ThinkwiseWikiHttps` → `schtasks /run /tn ThinkwiseWikiHttps` → **443번 확인** |
 | 색인 지금 갱신 | `schtasks /run /tn ThinkwiseWikiSync` |
 | 색인 처음부터 다시 | `PowerShell -ExecutionPolicy Bypass -File .\sync_index.ps1 -Full` |
 | 코드 업데이트 | 위 7단계 '개발 PC에서 배포하기' 3줄 |
 | 등록 해제 | `Unregister-ScheduledTask -TaskName ThinkwiseWiki -Confirm:$false`<br>`Unregister-ScheduledTask -TaskName ThinkwiseWikiSync -Confirm:$false` |
 | 방화벽 되돌리기 | `Remove-NetFirewallRule -DisplayName "Thinkwise Wiki 8000"` |
 | **씽크와이즈 로그인이 뜬다고 할 때** | 주소에서 `:8000`이 빠진 것. 80번은 씽크와이즈 본체다 |
-| **도메인으로 안 들어가진다고 할 때** | 먼저 `DESKTOP-318VJ68:8000`으로 되는지 확인 → 되면 **IP가 바뀐 것**.<br>`yjselect.com` DNS의 `wiki` A 레코드를 새 IP로 고친다 |
+| **도메인으로 안 들어가진다고 할 때** | 먼저 `DESKTOP-318VJ68:8000`으로 되는지 확인 → 되면 HTTPS 작업과 443번을 확인한다.<br>서버 IP가 바뀌었다면 `yjsboard.com` DNS의 `wiki` A 레코드와 HTTPS 바인딩을 함께 고친다 |
 
 ### 사용 로그 (누가 언제 무엇을 검색했나)
 
@@ -286,16 +297,13 @@ ssh user@192.168.0.76 "powershell -ExecutionPolicy Bypass -File C:\apps\thinkwis
   감사 로그라 과거가 바뀔 일이 없어 보이지만 **확인한 사실은 아닙니다.**
   이상하면 `sync_index.ps1 -Full`로 다시 만들면 됩니다.
 - **재부팅 후 자동 시작을 아직 실제로 확인하지 않았습니다**(등록만 확인).
-- **도메인은 IP가 바뀌면 조용히 죽습니다.** `wiki.yjselect.com`의 A 레코드에 `192.168.0.76`을
+- **도메인은 IP가 바뀌면 조용히 죽습니다.** `wiki.yjsboard.com`의 A 레코드에 `192.168.0.76`을
   손으로 적어 둔 것이라, 공유기가 다른 IP를 할당하는 날 링크가 안 열리고 **아무도 알려주지 않습니다.**
   예비 주소(컴퓨터 이름)를 남겨 둔 것이 이때의 진단 수단입니다.
-- **이 도메인의 수명은 우리 손에 없습니다.** `yjselect.com`이 지금은 `includeSubDomains` 없이
-  HSTS를 보내지만, 회사 홈페이지 쪽에서 그 한 조각을 **추가하는 순간 위키가 조용히 죽습니다**
-  (브라우저가 https로 승격시켜 연결이 실패하고, 우리 서버 로그에는 아무것도 안 남습니다).
-  `yjsboard.com`에서 오늘 겪은 것이 정확히 그 상태입니다. 우리가 통제하지 못하는 설정에 얹혀 있습니다.
-- **사내 IP가 공개 DNS에 드러납니다.** 인터넷의 누구나 `wiki.yjselect.com`을 조회해
+- **사내 IP가 공개 DNS에 드러납니다.** 인터넷의 누구나 `wiki.yjsboard.com`을 조회해
   `192.168.0.76`을 알 수 있습니다. 사설 IP라 밖에서 닿지는 못하지만, 사내망 대역과 서버 위치를
   알려주는 셈입니다. 임시 시스템이라 감수한 것입니다.
-- **https가 없습니다.** 주소를 손으로 칠 때 `https://`를 붙이면 연결이 실패합니다.
-  사설 IP를 가리키는 도메인이라 인증서에 DNS 챌린지가 필요하고, 자동 갱신을 붙이지 않으면
-  90일마다 손이 갑니다. 임시 시스템이라 달지 않기로 한 것입니다.
+- **HTTPS는 Caddy와 ACME-DNS에 의존합니다.** `install_https.ps1`이 DNS-01 인증서와 자동 갱신,
+  `192.168.0.76:443`의 역방향 프록시, 부팅 시 자동 시작을 관리합니다. 갱신 자격증명은
+  `caddy/acmedns.json`에 있고 저장소에서는 제외됩니다. 이 파일을 잃으면 새 ACME-DNS 자격증명을
+  만들고 가비아의 `_acme-challenge.wiki` CNAME을 함께 바꿔야 합니다.
